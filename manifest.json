@@ -1,0 +1,7 @@
+{
+  "name": "board-editor",
+  "short_name": "board-editor",
+  "description": "Board asset editor for use with board-explorer",
+  "start_url": "/",
+  "display": "standalone"
+}

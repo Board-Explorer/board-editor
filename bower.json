@@ -1,0 +1,17 @@
+{
+  "name": "board-editor",
+  "description": "Board asset editor for use with board-explorer",
+  "main": "index.html",
+  "dependencies": {
+    "polymer": "Polymer/polymer#^1.4.0",
+    "vaadin-split-layout": "vaadin/vaadin-split-layout#^1.1.0",
+    "iron-flex-layout": "PolymerElements/iron-flex-layout#^2.0.0",
+    "iron-resizable-behavior": "PolymerElements/iron-resizable-behavior#^2.0.0"
+  },
+  "devDependencies": {
+    "iron-component-page": "PolymerElements/iron-component-page#^1.0.0",
+    "iron-demo-helpers": "PolymerElements/iron-demo-helpers#^1.0.0",
+    "web-component-tester": "^4.0.0",
+    "webcomponentsjs": "webcomponents/webcomponentsjs#^0.7.0"
+  }
+}

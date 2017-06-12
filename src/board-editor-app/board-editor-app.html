@@ -1,0 +1,472 @@
+<link rel="import" href="../../bower_components/polymer/polymer.html">
+<link rel="import" href="../../bower_components/iron-resizable-behavior/iron-resizable-behavior.html">
+<link rel="import" href="../../bower_components/vaadin-split-layout/vaadin-split-layout.html">
+<link rel="import" href="../../bower_components/iron-flex-layout/iron-flex-layout-classes.html">
+<script src="svg-injector.js"></script>
+
+<dom-module id="board-editor-app">
+  <template>
+    <style is="custom-style" include="iron-flex iron-positioning"></style>
+    <style>
+      :host {
+        display: block;
+      }
+
+      #editor {
+        width: 66%;
+        overflow: hidden;
+      }
+
+      #meta {
+        width: 34%;
+      }
+
+      #dropZone {
+        border: 1px dashed #888;
+        margin: 1ex;
+        padding: 1ex;
+        min-height: 64px;
+        cursor: default;
+      }
+      #dropZone[drag] {
+        font-weight: bold;
+        background: #f0f0f0;
+      }
+      #dropZone > div {
+        pointer-events: none;
+      }
+
+      #container {
+        position: relative;
+      }
+
+      /* "#offset" is moved within container with 0,0 being the origin center
+       * of "#svg" */
+      #offset {
+      }
+
+      #svg {
+        display: inline-block;
+        -ms-transform-_origin: 50% 50%; /* IE 9 */
+        -webkit-transform-_origin: 50% 50%; /* Chrome, Safari, Opera */
+        transform-_origin: 50% 50%;
+      }
+
+      /* The hover-box has it's origin set to the center of the target,
+       * and is then moved 50% -- this way padding is equally spaced around
+       * the target */
+      .hover-box {
+        position: absolute;
+        opacity: 1;
+        border-color: yellow;
+        border-width: 2px;
+        border-style: solid;
+        padding: 0.1em;
+        box-sizing: content-box;
+        transition: opacity 0.25s linear;
+        border-radius: 0.25rem;
+        transform: translate(-50%, -50%);
+        pointer-events: none;
+      }
+
+    </style>
+
+    <vaadin-split-layout class="fit horizontal layout justified">
+      <div id="editor" class="vertical layout">
+        <div id="dropZone" class="horizontal layout center center-justified"><div>Drop SVG here</div></div>
+        <div id="container" class="flex vertical layout center">
+          <div id="offset" class="fit">
+            <div id="svg" class="fit"><!-- holds the created IMG that SVGInjector() uses--></div>
+          </div>
+        </div>
+      </div>
+      <div id="meta" class="vertical layout">
+        Click on items in a loaded SVG to see item information.
+      </div>
+    </vaadin-split-layout>
+  </template>
+
+  <script>
+    Polymer({
+
+      is: 'board-editor-app',
+
+      properties: {
+        data: {
+          type: Object,
+          value: {
+            image: null
+          }
+        },
+        /** The zoom level of the board. Minimum: 0.5, Maximum: 1.5 */
+        zoom: {
+          type: Number,
+          value: 0,
+          notify: true
+        },
+        /** Default scale for the board. 1.0 fills the viewport (while maintaining
+         * aspect ratio.) */
+        defaultScale: {
+          type: Number,
+          value: 0.8
+        },
+        _translation: {
+          type: Object,
+          value: {
+            x: 0,
+            y: 0
+          }
+        },
+        _origin: { /* Used for drag operations */
+          type: Object,
+          value: { x: 0, y: 0 }
+        },
+      },
+
+      behaviors: [
+        /* @polymerBehavior Polymer.IronResizableBehavior */
+        Polymer.IronResizableBehavior
+      ],
+
+      listeners: {
+        "iron-resize" : "resize",
+        'dropZone.dragover': 'handleDragOver',
+        'dropZone.dragenter': 'handleDragEnter',
+        'dropZone.dragleave': 'handleDragLeave',
+        'dropZone.drop': 'handleFileSelect'
+      },
+
+      observers: [
+        "_loadImage(data.image)"
+      ],
+
+      persistStorage: function() {
+        /* Remove any keys from storage that are no longer in the data store */
+        var remove = [];
+        for (var i = 0; i < localStorage.length; i++) {
+          var key = localStorage.key(i);
+          if (!(key in this.data)) {
+            remove.push(key);
+          }
+        }
+        remove.forEach(function(key) {
+          localStorage.removeItem(key);
+        });
+
+        /* Add new items from the data store to storage */
+        for (var key in this.data) {
+          localStorage.setItem(key, JSON.stringify(this.data[key]));
+        }
+      },
+
+      loadStorage: function() {
+        this.data = {};
+
+        for (var i = 0; i < localStorage.length; i++) {
+          var key = localStorage.key(i);
+          this.set("data." + key, JSON.parse(localStorage.getItem(key)));
+        }
+      },
+
+      resize: function() {
+        this.debounce("resize", function() {
+          if (!this._svg) {
+            return;
+          }
+          var bb = this._svg.getBBox();
+
+          if (this._filters) {
+            this._filters.forEach(function(el) {
+              el.parentElement.removeChild(el);
+            });
+          }
+          this._filters = [];
+
+          Polymer.dom.flush();
+          this.updateStyles();
+          /* Compare aspect ratio of the board with the aspect ratio of the
+           * viewport and set the scale based on the best-fit */
+          if (bb.width / bb.height > this.$.container.offsetWidth / this.$.container.offsetHeight) {
+            /* Board is wider-angle than the viewport, so use width as best-fit */
+            this.scale = this.defaultScale * this.$.container.offsetWidth / bb.width;
+          } else {
+            /* Board is narrower-angle than the viewport, so use height as best-fit */
+            this.scale = this.defaultScale * this.$.container.offsetHeight / bb.height;
+          }
+
+          this._translation.x = this.$.container.offsetWidth * 0.5;
+          this._translation.y = this.$.container.offsetHeight * 0.5;
+
+          /* Translate before zoom; zoom will recaluclate the filter div dimensions
+           * from the transformed SVG, including the _translation */
+          this._updatePosition(this._translation.x, this._translation.y);
+          this._updateZoom(this._svg, this.zoom);
+        }, 100);
+      },
+
+      _updatePosition: function(x, y) {
+        /* Can get called during initialization before DOM stamped */
+        var offset = this.$.offset;
+        if (!offset) {
+          return;
+        }
+        offset.style.top = y + 'px';
+        offset.style.left = x + 'px';
+
+        Polymer.dom.flush();
+      },
+
+
+      _updateZoom: function(svg, zoom) {
+        if (!svg) {
+          return;
+        }
+
+        zoom = this.scale + this.scale * zoom;
+
+        var transform = '', style = '', bb;
+
+        /* Work around Firefox issue #612118; getBBox() throws an exception if
+         * the SVG is not being rendered */
+        try {
+          bb = svg.getBBox();
+        } catch (_) {
+          return;
+        }
+
+        transform = "translate("
+          + -bb.width * zoom * 0.5 + "px,"
+          + -bb.height * zoom * 0.5 + "px)";
+        style += '-webkit-transform:' + transform + ';';
+        style += '-ms-transform:' + transform + ';';
+        style += '-moz-transform:' + transform + ';';
+        style += 'transform:' + transform + ';';
+        style += 'width: ' + bb.width * zoom + 'px;';
+        style += 'height: ' + bb.height * zoom + 'px;';
+
+        this.$.svg.style.cssText = style;
+        Polymer.dom.flush();
+
+        /* Unhide the SVG itself; we hide it when the board is being loaded. We
+        * don't show it until now because the style for the parent (this.$.svg)
+        * would have it in the wrong spot */
+        this._svg.style.visibility = 'visible';
+
+        this._calculateSVGElements();
+      },
+
+      _calculateSVGElements: function() {
+        var offset = this.getBoundingClientRect();
+
+        this._svgElements.forEach(function(svgItem) {
+          var rect = svgItem.el.getBoundingClientRect();
+          svgItem.rect = {
+            top: rect.top + rect.height * 0.5 - this._translation.y - offset.top + 'px',
+            left: rect.left + rect.width * 0.5 - this._translation.x - offset.left + 'px',
+            width: rect.width + 'px',
+            height: rect.height + 'px'
+          }
+        }, this);
+      },
+
+      _loadImage: function(data) {
+        /* Delete any children of the "svg" */
+        if (this._svg) {
+          this.unlisten(this._svg, 'tap', '_onSVGTap');
+          this.unlisten(this._svg, 'mouseover', '_onSVGMouseOver');
+          this._svg = null;
+        }
+
+        while (this.$.svg.firstChild) {
+          this.$.svg.removeChild(this.$.svg.firstChild);
+        }
+
+        if (!data) {
+          return;
+        }
+
+        var image = document.createElement('img');
+
+        image.style.visibility = 'hidden';
+
+        /* SVGInjector replaces 'image' with the svg it constructs
+         *
+         * Add the image to the document body; if we add it to the board-viewer,
+         * and the board-viewer is currently 'display: none', the SVG does not
+         * get setup correctly. */
+        document.body.appendChild(image);
+
+        /* Do not inject the SVG until after the SVG has completed
+         * loading into the main image, otherwise there is a race
+         * condition which can result in the SVG never showing up */
+        image.onload = function() {
+          SVGInjector(image, {
+            evalScripts: 'once',
+            each: function(svg) {
+              if (typeof svg == 'string') {
+                console.log('ERROR: ' + svg);
+                return;
+              }
+
+              Polymer.dom.flush();
+
+              /* Trim off any whitespace/viewbox padding from the SVG
+               * asset */
+              var bb = svg.getBBox();
+              svg.style.width = "100%";
+              svg.style.height = "100%";
+              svg.setAttribute('viewBox', bb.x + ' ' + bb.y + ' ' + bb.width + ' ' + bb.height);
+              svg.setAttribute('preserveAspectRatio', 'xMidYMid meet');
+
+              this.zoom = 0;
+              this.scale = 1;
+              this._translation.x = this.$.container.offsetWidth * 0.5;
+              this._translation.y = this.$.container.offsetHeight * 0.5;
+
+              /* Caches the _original (unscaled or translated) bounding rectangle
+              * for use when constructing new highlight rectangles */
+              this._svgElements = [];
+
+/*              Array.prototype.forEach.call(svg.querySelectorAll('[id^="BV_"]'),
+                function(el) {
+                this._svgElements.push({
+                  refdes: el.id.replace(/^BV_/, ''),
+                  el: el
+                });
+              }, this);*/
+
+              Polymer.dom(this.$.svg).appendChild(svg);
+              Polymer.dom.flush();
+              this.updateStyles();
+
+              /* Set this._svg at the end so _mapSvgToBoardData doesn't trigger
+               * until the DOM is populated with the SVG */
+              this._svg = svg;
+              this.listen(this._svg, 'mouseover', '_onSVGMouseOver');
+              this.listen(this._svg, 'tap', '_onSVGTap');
+
+              /* Trigger `resize` which will calculate zoom, scale, and
+               * translation */
+              this.resize();
+            }.bind(this)
+          });
+        }.bind(this);
+
+        image.src = data;
+      },
+
+      _onSVGTap: function(event) {
+        var output = [];
+        if (!this._filters) {
+          return;
+        }
+        this._filters.forEach(function(el) {
+          output.push("<li>ID: " + el.svgElement.id + "</li>");
+        });
+        this.$.meta.innerHTML = "<ul>" + output.join("\n") + "</ul>";
+      },
+
+      _onSVGMouseOver: function(event) {
+        this.clientX = event.clientX;
+        this.clientY = event.clientY;
+        this.debounce("mouseover", function() {
+          var largest = 0;
+
+          if (!this._svg) {
+            return;
+          }
+
+          if (this._filters) {
+            this._filters.forEach(function(el) {
+              el.parentElement.removeChild(el);
+            });
+          }
+          this._filters = [];
+
+          var offset = this.$.svg.getBoundingClientRect();
+
+          Array.prototype.forEach.call(this._svg.querySelectorAll('*'), function(el) {
+            var rect = el.getBoundingClientRect();
+            if (rect.top > this.clientY || rect.bottom < this.clientY
+              || rect.left > this.clientX || rect.right < this.clientX) {
+              return;
+            }
+
+            var box = document.createElement("div");
+            box.classList.add("hover-box");
+            box.svgElement = el;
+
+            box.style.top = rect.top + rect.height * 0.5 - offset.top + 'px',
+            box.style.left = rect.left + rect.width * 0.5 - offset.left + 'px',
+
+            box.style.height = rect.height + "px";
+            box.style.width = rect.width + "px";
+            Polymer.dom(this.$.svg).appendChild(box);
+            this._filters.push(box);
+          }.bind(this));
+
+          Polymer.dom.flush();
+          this.updateStyles();
+        }, 50);
+      },
+
+      handleFileSelect: function(event) {
+        event.stopPropagation();
+        event.preventDefault();
+
+        /* Clear the last image that was loaded (if there was one) */
+        delete this.data.image;
+        this.persistStorage();
+
+        /* FileList object */
+        var files = event.dataTransfer.files;
+
+        var output = [];
+        for (var i = 0, file; file = files[i]; i++) {
+          /* Only allow SVG */
+          if (!/image\/svg.*/.exec(file.type)) {
+            output.push("<li>" + escape(file.name) +
+              " is not recognized as an SVG.</li>");
+            continue;
+          }
+
+          output.push("<li>" + escape(file.name) +
+            "(" + (file.type || "N/A") + ") - " + file.size + " bytes</li>");
+
+          /* Create a FileReader to load the data as an URL then load it into
+           * the SVG */
+          var reader = new FileReader();
+          reader.onload = function(event) {
+            this.set("data.image", event.target.result);
+            this.persistStorage();
+          }.bind(this);
+          reader.readAsDataURL(file);
+
+          /* Stop after one SVG is identified */
+          break;
+        }
+
+        this.$.meta.innerHTML = '<ul>' + output.join('') + '</ul>';
+      },
+
+      handleDragEnter: function(event) {
+        event.target.setAttribute('drag', true);
+      },
+
+      handleDragLeave: function(event) {
+        event.target.removeAttribute('drag');
+      },
+
+      handleDragOver: function(event) {
+        event.stopPropagation();
+        event.preventDefault();
+        /* This is a copy drag and drop */
+        event.dataTransfer.dropEffect = 'copy';
+      },
+
+      attached: function() {
+        this.loadStorage();
+      }
+    });
+  </script>
+</dom-module>
