@@ -50,6 +50,13 @@ BASE=/board-editor ./build.sh
 With the above, you can then host the contents of build/default from
 a webroot of /board-editor/.
 
+## Deploy to board-explorer.github.io/board-editor
+
+```bash
+BASE=/board-editor/ ./build.sh
+./publish.sh
+```
+
 ## Running Tests
 
 ```
