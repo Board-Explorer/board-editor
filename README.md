@@ -10,13 +10,13 @@ your application locally.
 ## Viewing Your Application
 
 ```
-$ polymer serve
+polymer serve
 ```
 
 ## Building Your Application
 
 ```
-$ polymer build
+polymer build
 ```
 
 This will create a `build/` folder with `bundled/` and `unbundled/` sub-folders
@@ -27,13 +27,33 @@ You can serve the built versions by giving `polymer serve` a folder to serve
 from:
 
 ```
-$ polymer serve build/bundled
+polymer serve build/bundled
 ```
+
+## Deploying
+
+To deploy the application, you can use the `build.sh` script:
+
+```
+./build.sh
+```
+
+The above will build a minified and bundled version of the application in 
+`/build/default`. If you want to host the project from a webroot different
+than `$(basename ($pwd))/build/default` you can set the BASE environment
+variable:
+
+```
+BASE=/board-editor ./build.sh
+```
+
+With the above, you can then host the contents of build/default from
+a webroot of /board-editor/.
 
 ## Running Tests
 
 ```
-$ polymer test
+polymer test
 ```
 
 Your application is already set up to be tested via [web-component-tester](https://github.com/Polymer/web-component-tester). Run 
