@@ -145,7 +145,7 @@
         var remove = [];
         for (var i = 0; i < localStorage.length; i++) {
           var key = localStorage.key(i);
-          if (!(key in this.data)) {
+          if (/^board-editor\//.exec(key) && !(key in this.data)) {
             remove.push(key);
           }
         }
@@ -155,7 +155,7 @@
 
         /* Add new items from the data store to storage */
         for (var key in this.data) {
-          localStorage.setItem(key, JSON.stringify(this.data[key]));
+          localStorage.setItem("board-editor/" + key, JSON.stringify(this.data[key]));
         }
       },
 
@@ -163,8 +163,10 @@
         this.data = {};
 
         for (var i = 0; i < localStorage.length; i++) {
-          var key = localStorage.key(i);
-          this.set("data." + key, JSON.parse(localStorage.getItem(key)));
+          var key = localStorage.key(i).match(/^board-editor\/(.*)/);
+          if (key && key.length) {
+            this.set("data." + key[1], JSON.parse(localStorage.getItem(key[0])));
+          }
         }
       },
 
