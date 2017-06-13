@@ -2,21 +2,29 @@
 
 Board asset editor for use with board-explorer
 
-## Install the Polymer-CLI
+## Prerequisites
 
-First, make sure you have the [Polymer CLI](https://www.npmjs.com/package/polymer-cli) installed. Then run `polymer serve` to serve 
-your application locally.
+First, make sure you have the [Polymer 
+CLI](https://www.npmjs.com/package/polymer-cli) installed.
 
-## Viewing Your Application
-
+## Getting the code
+```bash
+git clone https://github.com/board-explorer/board-editor
+cd board-editor
+bower install
+./build.sh
 ```
+
+## Viewing the board-editor application
+
+```bash
 polymer serve
 ```
 
-## Building Your Application
+## Building the board-editor application
 
-```
-polymer build
+```bash
+./build.sh
 ```
 
 This will create a `build/` folder with `bundled/` and `unbundled/` sub-folders
@@ -27,7 +35,7 @@ You can serve the built versions by giving `polymer serve` a folder to serve
 from:
 
 ```
-polymer serve build/bundled
+polymer serve build/default
 ```
 
 ## Deploying
