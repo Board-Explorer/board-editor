@@ -8,6 +8,7 @@
 <link rel="import" href="../../bower_components/paper-material/paper-material.html">
 <link rel="import" href="../../bower_components/paper-radio-button/paper-radio-button.html">
 <link rel="import" href="../../bower_components/paper-radio-group/paper-radio-group.html">
+<link rel="import" href="../../bower_components/paper-toast/paper-toast.html">
 <link rel="import" href="../../bower_components/vaadin-split-layout/vaadin-split-layout.html">
 <script src="svg-injector.js"></script>
 
@@ -81,6 +82,11 @@
         border-width: 3px;
       }
 
+      paper-material {
+        padding: 1ex;
+        margin: 1em 0;
+      }
+
       paper-item {
         --paper-item-min-height: 24px;
         --paper-item-selected: {
@@ -95,6 +101,7 @@
 
     <iron-a11y-keys on-keys-pressed="_setPin" target="[[selectedInput]]" keys="ctrl+left"></iron-a11y-keys>
     <iron-a11y-keys on-keys-pressed="_setCategory" target="[[selectedInput]]" keys="ctrl+right"></iron-a11y-keys>
+    <paper-toast id="toast"></paper-toast>
     <vaadin-split-layout class="fit horizontal layout justified" on-wheel="_onListWheel">
       <div id="editor" class="vertical layout">
         <div id="dropZone" class="horizontal layout center center-justified"><div>Drop SVG here</div></div>
@@ -120,7 +127,7 @@
             </paper-item>
           </template>
         </paper-listbox>
-        <paper-material>
+        <paper-material id="key">
           Move mouse over item in SVG on left. Use scroll wheel to select within
           stack of items.
           <ul>
@@ -552,17 +559,13 @@
         /* FileList object */
         var files = event.dataTransfer.files;
 
-        var output = [];
         for (var i = 0, file; file = files[i]; i++) {
           /* Only allow SVG */
           if (!/image\/svg.*/.exec(file.type)) {
-            output.push("<li>" + escape(file.name) +
-              " is not recognized as an SVG.</li>");
+            this.$.toast.text = escape(file.name) + " is not recognized as an SVG.";
+            this.$.toast.open();
             continue;
           }
-
-          output.push("<li>" + escape(file.name) +
-            "(" + (file.type || "N/A") + ") - " + file.size + " bytes</li>");
 
           /* Create a FileReader to load the data as an URL then load it into
            * the SVG */
@@ -576,8 +579,6 @@
           /* Stop after one SVG is identified */
           break;
         }
-
-        this.$.meta.innerHTML = '<ul>' + output.join('') + '</ul>';
       },
 
       handleDragEnter: function(event) {
