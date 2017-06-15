@@ -1,7 +1,12 @@
 <link rel="import" href="../../bower_components/polymer/polymer.html">
 <link rel="import" href="../../bower_components/iron-resizable-behavior/iron-resizable-behavior.html">
-<link rel="import" href="../../bower_components/vaadin-split-layout/vaadin-split-layout.html">
 <link rel="import" href="../../bower_components/iron-flex-layout/iron-flex-layout-classes.html">
+<link rel="import" href="../../bower_components/paper-input/paper-input.html">
+<link rel="import" href="../../bower_components/paper-item/paper-item.html">
+<link rel="import" href="../../bower_components/paper-listbox/paper-listbox.html">
+<link rel="import" href="../../bower_components/paper-radio-button/paper-radio-button.html">
+<link rel="import" href="../../bower_components/paper-radio-group/paper-radio-group.html">
+<link rel="import" href="../../bower_components/vaadin-split-layout/vaadin-split-layout.html">
 <script src="svg-injector.js"></script>
 
 <dom-module id="board-editor-app">
@@ -69,9 +74,24 @@
         pointer-events: none;
       }
 
+      .hover-box.active {
+        border-color: blue;
+        border-width: 3px;
+      }
+
+      paper-item {
+        --paper-item-min-height: 24px;
+        --paper-item-selected: {
+          background-color: #eee;
+        };
+      }
+
+      paper-item.active {
+        background-color: #f8f8f8;
+      }
     </style>
 
-    <vaadin-split-layout class="fit horizontal layout justified">
+    <vaadin-split-layout class="fit horizontal layout justified" on-wheel="_onListWheel">
       <div id="editor" class="vertical layout">
         <div id="dropZone" class="horizontal layout center center-justified"><div>Drop SVG here</div></div>
         <div id="container" class="flex vertical layout center">
@@ -81,7 +101,21 @@
         </div>
       </div>
       <div id="meta" class="vertical layout">
-        Click on items in a loaded SVG to see item information.
+        <div hidden$="[[!isEmpty(elements)]]">Click on elements in a loaded SVG to see information.</div>
+        <paper-listbox id="elementList" selected="{{selected}}" attr-for-item-title="refdes">
+          <template is="dom-repeat" items="[[elements]]">
+            <paper-item refdes="{{item.refdes}}" class="layout horizontal end-justified" on-mouseover="_onItemHover" on-mouseout="_onItemOut">
+              <paper-item-body two-line>
+                <paper-input tab-index="1" always-float-label label="Refdes" value="{{item.refdes}}"></paper-input>
+                <div secondary>[[getComponent(item)]]</div>
+              </paper-item-body>
+              <paper-radio-group selected="{{item.type}}">
+                <paper-radio-button tab-index="2" name="pin">Pin</paper-radio-button>
+                <paper-radio-button tab-index="3" name="component">Component</paper-radio-button>
+              </paper-radio-group>
+            </paper-item>
+          </template>
+        </paper-listbox>
       </div>
     </vaadin-split-layout>
   </template>
@@ -92,6 +126,10 @@
       is: 'board-editor-app',
 
       properties: {
+        selected: {
+          type: Number,
+          value: 0
+        },
         data: {
           type: Object,
           value: {
@@ -121,6 +159,10 @@
           type: Object,
           value: { x: 0, y: 0 }
         },
+        elements: {
+          type: Array,
+          value: []
+        }
       },
 
       behaviors: [
@@ -137,8 +179,58 @@
       },
 
       observers: [
+        "_selectedChanged(elements, selected)",
         "_loadImage(data.image)"
       ],
+
+      _selectedChanged: function(elements, selected) {
+        if (elements.length <= selected) {
+          return;
+        }
+        Array.prototype.forEach.call(this.querySelectorAll(".active"), function(el) {
+          el.classList.remove("active");
+        });
+
+        elements[selected].hover.classList.add("active");
+      },
+
+      _onListWheel: function(event) {
+        if (event.deltaY < 0) { /* Scroll UP */
+          this.selected = Math.max(0, this.selected - 1);
+        } else if (event.deltaY > 0) { /* Scroll DOWN */
+          this.selected = Math.min(this.elements.length - 1, this.selected + 1);
+        }
+
+        var selected = this.$.elementList.selectedItem;
+        if (selected) {
+          selected.scrollIntoView();
+          selected.querySelector('paper-input').inputElement.focus();
+        }
+      },
+
+      _onItemHover: function(event) {
+        var item = event.model.item;
+        event.currentTarget.classList.add("active");
+        item.hover.classList.add("active");
+        Polymer.dom(this.$.svg).appendChild(item.hover);
+      },
+
+      _onItemOut: function(event) {
+        var item = event.model.item;
+        event.currentTarget.classList.remove("active");
+        item.hover.classList.remove("active");
+        if (item.hover.parentElement) {
+          Polymer.dom(this.$.svg).removeChild(item.hover);
+        }
+      },
+
+      isEmpty: function(item) {
+        return (!item || (Array.isArray(item) && item.length == 0));
+      },
+
+      getComponent: function(item) {
+        return item.component ? item.component.refdes : null;
+      },
 
       persistStorage: function() {
         /* Remove any keys from storage that are no longer in the data store */
@@ -177,12 +269,12 @@
           }
           var bb = this._svg.getBBox();
 
-          if (this._filters) {
-            this._filters.forEach(function(el) {
-              el.parentElement.removeChild(el);
+          if (this._hoverItems) {
+            this._hoverItems.forEach(function(item) {
+              item.parentElement.removeChild(item);
             });
           }
-          this._filters = [];
+          this._hoverItems = [];
 
           Polymer.dom.flush();
           this.updateStyles();
@@ -217,7 +309,6 @@
 
         Polymer.dom.flush();
       },
-
 
       _updateZoom: function(svg, zoom) {
         if (!svg) {
@@ -274,7 +365,6 @@
       _loadImage: function(data) {
         /* Delete any children of the "svg" */
         if (this._svg) {
-          this.unlisten(this._svg, 'tap', '_onSVGTap');
           this.unlisten(this._svg, 'mouseover', '_onSVGMouseOver');
           this._svg = null;
         }
@@ -345,7 +435,6 @@
                * until the DOM is populated with the SVG */
               this._svg = svg;
               this.listen(this._svg, 'mouseover', '_onSVGMouseOver');
-              this.listen(this._svg, 'tap', '_onSVGTap');
 
               /* Trigger `resize` which will calculate zoom, scale, and
                * translation */
@@ -355,17 +444,6 @@
         }.bind(this);
 
         image.src = data;
-      },
-
-      _onSVGTap: function(event) {
-        var output = [];
-        if (!this._filters) {
-          return;
-        }
-        this._filters.forEach(function(el) {
-          output.push("<li>ID: " + el.svgElement.id + "</li>");
-        });
-        this.$.meta.innerHTML = "<ul>" + output.join("\n") + "</ul>";
       },
 
       _onSVGMouseOver: function(event) {
@@ -378,20 +456,33 @@
             return;
           }
 
-          if (this._filters) {
-            this._filters.forEach(function(el) {
-              el.parentElement.removeChild(el);
+          if (this._hoverItems) {
+            this._hoverItems.forEach(function(item) {
+              if (item.parentElement) {
+                item.parentElement.removeChild(item);
+              }
             });
           }
-          this._filters = [];
+          this._hoverItems = [];
 
           var offset = this.$.svg.getBoundingClientRect();
+          var elements = [];
 
           Array.prototype.forEach.call(this._svg.querySelectorAll('*'), function(el) {
             var rect = el.getBoundingClientRect();
             if (rect.top > this.clientY || rect.bottom < this.clientY
               || rect.left > this.clientX || rect.right < this.clientX) {
               return;
+            }
+
+            for (var i = 0, e; i < this._hoverItems.length, e = this._hoverItems[i]; i++) {
+              var r = e.svgElement.getBoundingClientRect();
+              if (r.top == rect.top
+              && r.left == rect.left
+              && r.bottom == rect.bottom
+              && r.right == rect.right) {
+                return;
+              }
             }
 
             var box = document.createElement("div");
@@ -404,11 +495,17 @@
             box.style.height = rect.height + "px";
             box.style.width = rect.width + "px";
             Polymer.dom(this.$.svg).appendChild(box);
-            this._filters.push(box);
+            this._hoverItems.push(box);
+
+            elements.push({
+              refdes: el.id,
+              component: null,
+              hover: box,
+              type: el.type ? el.type : "pin"
+            });
           }.bind(this));
 
-          Polymer.dom.flush();
-          this.updateStyles();
+          this.elements = elements;
         }, 50);
       },
 
