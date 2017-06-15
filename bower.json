@@ -24,6 +24,7 @@
   "resolutions": {
     "webcomponentsjs": "^v1.0.0",
     "iron-resizable-behavior": "^2.0.0",
-    "iron-flex-layout": "^2.0.0"
+    "iron-flex-layout": "^2.0.0",
+    "paper-material": "^2.0.0"
   }
 }
